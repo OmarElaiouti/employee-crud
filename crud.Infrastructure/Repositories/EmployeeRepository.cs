@@ -16,19 +16,24 @@ namespace crud.Infrastructure.Repositories
 
         public async Task<Employee> GetByIdAsync(int id)
         {
-            return await _context.Employees.FindAsync(id);
+            return await _context.Employees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == id);
         }
 
         public async Task<IEnumerable<Employee>> SearchByNameAsync(string name)
         {
             return await _context.Employees
+                .AsNoTracking()
                 .Where(e => e.Name.Contains(name))
                 .ToListAsync();
         }
 
         public async Task<IEnumerable<Employee>> GetAllAsync()
         {
-            return await _context.Employees.ToListAsync();
+            return await _context.Employees
+                .AsNoTracking()
+                .ToListAsync();
         }
 
         public async Task AddAsync(Employee employee)
@@ -39,10 +44,13 @@ namespace crud.Infrastructure.Repositories
 
         public async Task DeleteAsync(int id)
         {
-            var employee = await _context.Employees.FindAsync(id);
+            var employee = await _context.Employees
+                .FirstOrDefaultAsync(e => e.Id == id);
+
             if (employee != null)
             {
-                _context.Employees.Remove(employee);
+                employee.Archived = true;
+                _context.Employees.Update(employee);
                 await _context.SaveChangesAsync();
             }
         }
@@ -52,20 +60,30 @@ namespace crud.Infrastructure.Repositories
             var employees = await _context.Employees
                 .Where(e => ids.Contains(e.Id))
                 .ToListAsync();
-            _context.Employees.RemoveRange(employees);
+
+            foreach (var employee in employees)
+            {
+                employee.Archived = true;
+                _context.Employees.Update(employee);
+            }
+
             await _context.SaveChangesAsync();
         }
 
         public async Task UpdateAsync(Employee employee)
         {
-            var employeeToUpdate = await _context.Employees.FindAsync(employee.Id);
-            if (employee != null)
+            var employeeToUpdate = await _context.Employees
+                .FirstOrDefaultAsync(e => e.Id == employee.Id);
+
+            if (employeeToUpdate != null)
             {
-                _context.Employees.Update(employee);
+                _context.Employees.Update(employeeToUpdate);
                 await _context.SaveChangesAsync();
             }
         }
-
     }
+
+
+  
 
 }

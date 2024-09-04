@@ -1,13 +1,18 @@
 ﻿
 using crud.Core.Enums;
 using crud.Core.Helpers;
+using crud.Core.Interfaces;
+using crud.Core.Models;
 using crud.Infrastructure.Context;
 using crud.Infrastructure.Dtos.AuthDtos;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 
@@ -21,6 +26,7 @@ namespace crud.Infrastructure.Services
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ApplicationDbContext _dbContext;
         private readonly JWT _jwt;
+        private readonly IRefreshTokenRepository _refreshTokenRepository;
 
 
         public AuthService(
@@ -28,7 +34,8 @@ namespace crud.Infrastructure.Services
             SignInManager<IdentityUser> signInManager,
             RoleManager<IdentityRole> roleManager,
             ApplicationDbContext dbContext,
-            IOptions<JWT> jwt
+            IOptions<JWT> jwt,
+            IRefreshTokenRepository refreshTokenRepository
             )
         {
             _userManager = userManager;
@@ -36,6 +43,8 @@ namespace crud.Infrastructure.Services
             _roleManager = roleManager;
             _dbContext = dbContext;
             _jwt = jwt.Value;
+            _refreshTokenRepository = refreshTokenRepository;
+            
 
 
         }
@@ -43,6 +52,7 @@ namespace crud.Infrastructure.Services
 
 
         #region public methods
+
         public async Task<RegistrationResult> Register(RegisterDto model)
         {
             var email = model.Email;
@@ -103,7 +113,7 @@ namespace crud.Infrastructure.Services
 
         }
 
-        public async Task<string> Login(LoginDto model)
+        public async Task<LoginResultDto?> Login(LoginDto model, HttpContext httpContext)
         {
             try
             {
@@ -111,59 +121,111 @@ namespace crud.Infrastructure.Services
                 if (user == null || !await _userManager.CheckPasswordAsync(user, model.Password))
                 {
                     return null;
-
                 }
 
-
-                var token = await GenerateJwtToken(user);
-                return token;
+                var tokens = await GenerateTokens(user, httpContext);
+                return new LoginResultDto
+                {
+                    AccessToken = tokens.AccessToken,
+                    RefreshToken = tokens.RefreshToken
+                };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // Log or handle the exception appropriately
                 return null;
             }
         }
 
+        public async Task<string> RefreshToken(HttpContext httpContext, string token)
+        {
+            var isValid = await ValidateRefreshToken(token);
+            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(token);
+
+            if (!isValid)
+            {
+                await _refreshTokenRepository.RemoveAsync(refreshToken);
+                await _refreshTokenRepository.SaveChangesAsync();
+                throw new SecurityTokenInvalidAudienceException("Refresh token is expired.");
+            }
+
+            var currentIpAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+            var currentUserAgent = httpContext.Request.Headers["User-Agent"].ToString();
+
+            if (refreshToken.IpAddress != currentIpAddress || refreshToken.UserAgent != currentUserAgent)
+            {
+                throw new SecurityTokenInvalidAudienceException("Token usage from an unrecognized device or location.");
+            }
+
+            var user = await _userManager.FindByIdAsync(refreshToken.UserId);
+            var Tokens = await GenerateTokens(user, httpContext, token);
+
+            return Tokens.AccessToken;
+        }
+        
         #endregion
 
         #region private methods
 
-        private async Task<string> GenerateJwtToken(IdentityUser user)
+        private async Task<(string AccessToken, string RefreshToken)> GenerateTokens(IdentityUser user, HttpContext httpContext, string? currentRefreshToken = null)
         {
-
-
             var roles = await _userManager.GetRolesAsync(user);
             var roleClaims = new List<Claim>();
-
 
             foreach (var role in roles)
                 roleClaims.Add(new Claim(ClaimTypes.Role, role));
 
             var claims = new List<Claim>
-            {
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
-
-            }
+        {
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+        }
             .Union(roleClaims);
 
             var symmetricSecurityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key));
-            var signingCredintials = new SigningCredentials(symmetricSecurityKey, SecurityAlgorithms.HmacSha256);
+            var signingCredentials = new SigningCredentials(symmetricSecurityKey, SecurityAlgorithms.HmacSha256);
 
-            var jwtToken = new JwtSecurityToken(
-            issuer: _jwt.Issuer,
-            audience: _jwt.Audience,
-            claims: claims,
-            notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddDays(_jwt.DurationInDays),
-                signingCredentials: signingCredintials
-                );
+            var accessToken = new JwtSecurityToken(
+                issuer: _jwt.Issuer,
+                audience: _jwt.Audience,
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddMinutes(_jwt.DurationInMinutes),
+                signingCredentials: signingCredentials
+            );
 
-            return new JwtSecurityTokenHandler().WriteToken(jwtToken);
+            if (currentRefreshToken == null)
+            {
+                var refreshToken = new ApplicationRefreshToken
+                {
+                    Token = GenerateSecureToken(),
+                    UserId = user.Id,
+                    ExpiryDate = DateTime.UtcNow.AddDays(_jwt.DurationInDays),
+                    IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
+                    UserAgent = httpContext.Request.Headers["User-Agent"].ToString()
+                };
 
+                await _refreshTokenRepository.AddAsync(refreshToken);
+                await _refreshTokenRepository.SaveChangesAsync();
 
+                return (new JwtSecurityTokenHandler().WriteToken(accessToken), refreshToken.Token);
+            }
+            return (new JwtSecurityTokenHandler().WriteToken(accessToken), currentRefreshToken);
+
+        }
+        private async Task<bool> ValidateRefreshToken(string token)
+        {
+            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(token);
+            return refreshToken != null && refreshToken.ExpiryDate >= DateTime.UtcNow;
+        }
+        private string GenerateSecureToken()
+        {
+            using (var rng = new RNGCryptoServiceProvider())
+            {
+                var tokenBytes = new byte[32];
+                rng.GetBytes(tokenBytes);
+                return Convert.ToBase64String(tokenBytes);
+            }
         }
 
         #endregion

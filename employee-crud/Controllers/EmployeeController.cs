@@ -57,6 +57,10 @@ namespace employee_crud.Controllers
         [HttpDelete]
         public async Task<IActionResult> DeleteRange([FromBody] IEnumerable<int> ids)
         {
+            if (ids == null || !ids.Any())
+            {
+                return BadRequest("No IDs provided.");
+            }
             await _employeeService.DeleteRangeAsync(ids);
             return Ok();
         }

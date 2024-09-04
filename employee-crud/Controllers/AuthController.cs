@@ -6,6 +6,8 @@ using crud.Core.Enums;
 using crud.Infrastructure.Dtos.AuthDtos;
 using crud.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using System.Net.Http;
 
 namespace Delivery.Api.Controllers
 {
@@ -16,11 +18,14 @@ namespace Delivery.Api.Controllers
 
         private readonly AuthService _authService;
         private readonly ILogger<AuthController> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public AuthController(AuthService authService, ILogger<AuthController> logger)
+
+        public AuthController(AuthService authService, ILogger<AuthController> logger, IHttpContextAccessor httpContext)
         {
             _authService = authService;
             _logger = logger;
+            _httpContextAccessor = httpContext;
         }
 
         [HttpPost("register")]
@@ -61,15 +66,14 @@ namespace Delivery.Api.Controllers
                     return BadRequest(new { error = "Invalid email or password." });
                 }
 
-                var token = await _authService.Login(model);
+                LoginResultDto? token = await _authService.Login(model, _httpContextAccessor.HttpContext);
                 if (token == null)
                 {
                     _logger.LogWarning("Invalid login attempt: Invalid token.");
-                    return Unauthorized(new { error = "Invalid email or password." });
+                    return BadRequest(new { error = "Invalid email or password." });
                 }
-
-                _logger.LogInformation("User logged in successfully.");
-                return Ok(new { token });
+  
+                return Ok(token);
             }
             catch (Exception ex)
             {
@@ -77,6 +81,29 @@ namespace Delivery.Api.Controllers
                 return StatusCode(500, new { error = "An unexpected error occurred during login." });
             }
         }
+
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken(string refreshToken)
+        {
+            try
+            {
+                var newAccessToken = await _authService.RefreshToken(_httpContextAccessor.HttpContext,refreshToken);
+                if (newAccessToken == null)
+                {
+                    _logger.LogWarning("Invalid refresh token attempt: Invalid token.");
+                    return Unauthorized(new { error = "Invalid email or password." });
+                }
+
+                _logger.LogInformation("User logged in successfully.");
+                return Ok(newAccessToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An Error occurred during refreshing token.");
+                return StatusCode(500, new { error = "An Error occurred during refreshing token." });
+            }
+        }
+
 
 
     }
