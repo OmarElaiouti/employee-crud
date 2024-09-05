@@ -73,10 +73,16 @@ namespace crud.Infrastructure.Repositories
         public async Task UpdateAsync(Employee employee)
         {
             var employeeToUpdate = await _context.Employees
+                .AsNoTracking()
                 .FirstOrDefaultAsync(e => e.Id == employee.Id);
 
             if (employeeToUpdate != null)
             {
+                employeeToUpdate.Name = employee.Name;
+                employeeToUpdate.Email = employee.Email;
+                employeeToUpdate.Phone = employee.Phone;
+                employeeToUpdate.Address = employee.Address;
+
                 _context.Employees.Update(employeeToUpdate);
                 await _context.SaveChangesAsync();
             }
