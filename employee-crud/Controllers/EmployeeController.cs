@@ -34,10 +34,17 @@ namespace employee_crud.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<EmployeeDto>>> GetAll()
+        public async Task<ActionResult<PagedResult<EmployeeDto>>> GetEmployees([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
-            var employees = await _employeeService.GetAllAsync();
-            return Ok(employees);
+            var employees = await _employeeService.GetAllAsync(page, pageSize);
+            var totalEmployees = await _employeeService.GetTotalCountAsync();
+            var result = new PagedResult<EmployeeDto>
+            {
+                Items = employees,
+                TotalCount = totalEmployees
+            };
+
+            return Ok(result);
         }
 
         [HttpPost]

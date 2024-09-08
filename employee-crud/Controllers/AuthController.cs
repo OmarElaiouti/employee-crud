@@ -83,7 +83,7 @@ namespace Delivery.Api.Controllers
         }
 
         [HttpGet("refresh-token")]
-        public async Task<IActionResult> RefreshToken(string refreshToken)
+        public async Task<IActionResult> RefreshToken([FromQuery] string refreshToken)
         {
             try
             {

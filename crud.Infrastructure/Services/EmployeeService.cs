@@ -30,12 +30,16 @@ namespace crud.Infrastructure.Services
             return employees.Select(MapToDto);
         }
 
-        public async Task<IEnumerable<EmployeeDto>> GetAllAsync()
+        public async Task<IEnumerable<EmployeeDto>> GetAllAsync(int page, int pageSize)
         {
-            var employees = await _employeeRepository.GetAllAsync();
+            var employees = await _employeeRepository.GetAllAsync(page, pageSize);
             return employees.Select(MapToDto);
         }
 
+        public async Task<int> GetTotalCountAsync()
+        {
+            return await _employeeRepository.GetTotalCountAsync();
+        }
         public async Task AddAsync(EmployeeDto employeeDto)
         {
             var employee = MapToEntity(employeeDto);

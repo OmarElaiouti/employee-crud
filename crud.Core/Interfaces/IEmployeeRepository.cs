@@ -11,7 +11,8 @@ namespace crud.Core.Interfaces
     {
         Task<Employee> GetByIdAsync(int id);
         Task<IEnumerable<Employee>> SearchByNameAsync(string name);
-        Task<IEnumerable<Employee>> GetAllAsync();
+        Task<IEnumerable<Employee>> GetAllAsync(int page, int pageSize);
+        Task<int> GetTotalCountAsync();
         Task AddAsync(Employee employee);
         Task DeleteAsync(int id);
         Task DeleteRangeAsync(IEnumerable<int> ids);

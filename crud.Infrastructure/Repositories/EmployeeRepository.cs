@@ -29,13 +29,19 @@ namespace crud.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<Employee>> GetAllAsync()
+        public async Task<IEnumerable<Employee>> GetAllAsync(int page, int pageSize)
         {
             return await _context.Employees
                 .AsNoTracking()
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
         }
 
+        public async Task<int> GetTotalCountAsync()
+        {
+            return await _context.Employees.CountAsync();
+        }
         public async Task AddAsync(Employee employee)
         {
             _context.Employees.Add(employee);
