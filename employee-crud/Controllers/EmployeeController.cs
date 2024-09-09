@@ -18,7 +18,7 @@ namespace employee_crud.Controllers
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<EmployeeDto>> GetById(int id)
+        public async Task<ActionResult<EmployeeDto>> GetById(int id = 0)
         {
             var employee = await _employeeService.GetByIdAsync(id);
             if (employee == null)
@@ -27,7 +27,7 @@ namespace employee_crud.Controllers
         }
 
         [HttpGet("search")]
-        public async Task<ActionResult<IEnumerable<EmployeeDto>>> SearchByName(string name)
+        public async Task<ActionResult<IEnumerable<EmployeeDto>>> SearchByName(string name = "")
         {
             var employees = await _employeeService.SearchByNameAsync(name);
             return Ok(employees);
@@ -55,7 +55,7 @@ namespace employee_crud.Controllers
         }
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> Delete(int id)
+        public async Task<IActionResult> Delete(int id = 0)
         {
             await _employeeService.DeleteAsync(id);
             return Ok();
